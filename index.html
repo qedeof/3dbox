@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Proportional Box Visualizer</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Three.js OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom scrollbar for control panels */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(51, 65, 85, 0.8);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(71, 85, 105, 1);
+        }
+        /* Dynamic 3D Floating overlay labels */
+        .dim-label {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            user-select: none;
+            transition: opacity 0.2s ease;
+        }
+        canvas {
+            outline: none;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden select-none">
+
+    <!-- Top Navigation Header -->
+    <header class="h-14 bg-slate-900/90 backdrop-blur border-b border-slate-800 px-4 flex items-center justify-between z-20 shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-9 h-9 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                <i class="fa-solid fa-cube text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-sm md:text-base leading-tight text-slate-100">3D Box Studio</h1>
+                <p class="text-[11px] text-slate-400">Proportional Cuboid & Dimension Analyzer</p>
+            </div>
+        </div>
+
+        <!-- Header Actions -->
+        <div class="flex items-center gap-2">
+            <button id="btn-reset-cam" title="Reset View" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium rounded-lg text-slate-200 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-camera-rotate"></i>
+                <span class="hidden sm:inline">Reset Camera</span>
+            </button>
+            <button id="btn-snapshot" title="Take Screenshot" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-xs font-medium rounded-lg text-white transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/20">
+                <i class="fa-solid fa-camera"></i>
+                <span class="hidden sm:inline">Capture</span>
+            </button>
+            <button id="btn-toggle-sidebar" class="lg:hidden p-2 bg-slate-800 text-slate-300 rounded-lg border border-slate-700">
+                <i class="fa-solid fa-sliders"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="flex-1 flex relative overflow-hidden">
+
+        <!-- 3D Viewport Container -->
+        <main id="viewport-container" class="flex-1 relative bg-slate-950 w-full h-full overflow-hidden">
+            
+            <!-- Three.js Canvas target -->
+            <div id="canvas-holder" class="w-full h-full"></div>
+
+            <!-- Floating 3D Measurement Overlay Badges (Positions updated via JS) -->
+            <div id="label-length" class="dim-label hidden">
+                <div class="bg-red-500/90 text-white text-[11px] font-mono font-semibold px-2 py-0.5 rounded shadow-lg border border-red-400/50 backdrop-blur flex items-center gap-1">
+                    <span class="text-red-200">L:</span> <span id="label-val-length">10 cm</span>
+                </div>
+            </div>
+            <div id="label-width" class="dim-label hidden">
+                <div class="bg-blue-500/90 text-white text-[11px] font-mono font-semibold px-2 py-0.5 rounded shadow-lg border border-blue-400/50 backdrop-blur flex items-center gap-1">
+                    <span class="text-blue-200">W:</span> <span id="label-val-width">10 cm</span>
+                </div>
+            </div>
+            <div id="label-height" class="dim-label hidden">
+                <div class="bg-emerald-500/90 text-white text-[11px] font-mono font-semibold px-2 py-0.5 rounded shadow-lg border border-emerald-400/50 backdrop-blur flex items-center gap-1">
+                    <span class="text-emerald-200">H:</span> <span id="label-val-height">10 cm</span>
+                </div>
+            </div>
+
+            <!-- Viewport Overlay Controls (Top Left View Angles) -->
+            <div class="absolute top-4 left-4 z-10 flex flex-wrap gap-1.5 bg-slate-900/80 backdrop-blur p-1.5 rounded-xl border border-slate-800">
+                <button data-view="iso" class="view-btn text-xs px-2.5 py-1 rounded-lg bg-indigo-600 text-white font-medium transition">Iso</button>
+                <button data-view="front" class="view-btn text-xs px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition">Front</button>
+                <button data-view="side" class="view-btn text-xs px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition">Side</button>
+                <button data-view="top" class="view-btn text-xs px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition">Top</button>
+            </div>
+
+            <!-- Floating Viewport Stats Badge (Bottom Left) -->
+            <div class="absolute bottom-4 left-4 z-10 bg-slate-900/85 backdrop-blur border border-slate-800/80 p-3 rounded-xl shadow-xl max-w-[240px] hidden sm:block">
+                <div class="text-[10px] uppercase tracking-wider font-semibold text-slate-400 mb-1 flex items-center justify-between">
+                    <span>Quick Metrics</span>
+                    <i class="fa-solid fa-calculator text-indigo-400"></i>
+                </div>
+                <div class="space-y-1 text-xs font-mono">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">Volume:</span>
+                        <span id="quick-volume" class="text-slate-100 font-semibold">1,000 cm³</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">Surface Area:</span>
+                        <span id="quick-area" class="text-slate-100 font-semibold">600 cm²</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">Diagonal:</span>
+                        <span id="quick-diagonal" class="text-indigo-300 font-semibold">17.32 cm</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Viewport Interaction Instructions (Bottom Right) -->
+            <div class="absolute bottom-4 right-4 z-10 bg-slate-900/60 backdrop-blur border border-slate-800/60 text-[11px] text-slate-400 px-3 py-1.5 rounded-lg pointer-events-none hidden md:flex items-center gap-3">
+                <span><i class="fa-solid fa-mouse text-slate-300"></i> Left Click: Rotate</span>
+                <span><i class="fa-solid fa-hand-pointer text-slate-300"></i> Right Click: Pan</span>
+                <span><i class="fa-solid fa-arrows-up-down text-slate-300"></i> Scroll: Zoom</span>
+            </div>
+        </main>
+
+        <!-- Sidebar Control Panel -->
+        <aside id="sidebar" class="absolute lg:relative right-0 top-0 bottom-0 w-80 md:w-96 bg-slate-900 border-l border-slate-800 flex flex-col z-30 transition-transform duration-300 translate-x-full lg:translate-x-0 shadow-2xl lg:shadow-none">
+            
+            <!-- Sidebar Header -->
+            <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+                <h2 class="font-semibold text-sm text-slate-200 flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-indigo-400"></i> Box Configuration
+                </h2>
+                <div class="flex items-center gap-2">
+                    <!-- Unit Selector -->
+                    <select id="unit-select" class="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1 font-mono focus:outline-none focus:border-indigo-500">
+                        <option value="cm" selected>Centimeters (cm)</option>
+                        <option value="m">Meters (m)</option>
+                        <option value="mm">Millimeters (mm)</option>
+                        <option value="in">Inches (in)</option>
+                        <option value="ft">Feet (ft)</option>
+                    </select>
+                    <button id="btn-close-sidebar" class="lg:hidden text-slate-400 hover:text-white p-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Control Tabs / Sections -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-6">
+
+                <!-- 1. Presets -->
+                <section>
+                    <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">Preset Objects</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button class="preset-btn p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-left transition text-xs" data-l="10" data-w="10" data-h="10" data-unit="cm">
+                            <div class="font-medium text-slate-200">Cube</div>
+                            <div class="text-[10px] text-slate-400 font-mono">10 × 10 × 10 cm</div>
+                        </button>
+                        <button class="preset-btn p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-left transition text-xs" data-l="30" data-w="20" data-h="15" data-unit="cm">
+                            <div class="font-medium text-slate-200">Shipping Box</div>
+                            <div class="text-[10px] text-slate-400 font-mono">30 × 20 × 15 cm</div>
+                        </button>
+                        <button class="preset-btn p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-left transition text-xs" data-l="7.5" data-w="0.8" data-h="14.6" data-unit="cm">
+                            <div class="font-medium text-slate-200">Smartphone</div>
+                            <div class="text-[10px] text-slate-400 font-mono">7.5 × 0.8 × 14.6 cm</div>
+                        </button>
+                        <button class="preset-btn p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-left transition text-xs" data-l="20" data-w="10" data-h="6.5" data-unit="cm">
+                            <div class="font-medium text-slate-200">Brick</div>
+                            <div class="text-[10px] text-slate-400 font-mono">20 × 10 × 6.5 cm</div>
+                        </button>
+                        <button class="preset-btn p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-left transition text-xs" data-l="120" data-w="80" data-h="15" data-unit="cm">
+                            <div class="font-medium text-slate-200">Wooden Pallet</div>
+                            <div class="text-[10px] text-slate-400 font-mono">120 × 80 × 15 cm</div>
+                        </button>
+                        <button class="preset-btn p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-left transition text-xs" data-l="90" data-w="5" data-h="200" data-unit="cm">
+                            <div class="font-medium text-slate-200">Door</div>
+                            <div class="text-[10px] text-slate-400 font-mono">90 × 5 × 200 cm</div>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- 2. Dimensions Inputs -->
+                <section class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Dimensions</label>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-slate-400 flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" id="lock-aspect" class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0 focus:ring-offset-0">
+                                <span>Lock Proportions</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Length Slider & Input -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-red-400 font-medium flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span> Length (X / Red)
+                            </span>
+                            <div class="flex items-center gap-1">
+                                <input type="number" id="num-length" min="0.1" max="500" step="0.1" value="30" class="w-20 bg-slate-800 border border-slate-700 rounded text-right px-2 py-0.5 font-mono text-xs text-slate-100 focus:outline-none focus:border-red-500">
+                                <span class="unit-label text-slate-400 text-[11px]">cm</span>
+                            </div>
+                        </div>
+                        <input type="range" id="slide-length" min="0.5" max="100" step="0.5" value="30" class="w-full accent-red-500 bg-slate-800 rounded-lg h-1.5 cursor-pointer">
+                    </div>
+
+                    <!-- Width Slider & Input -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-blue-400 font-medium flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block"></span> Width (Z / Blue)
+                            </span>
+                            <div class="flex items-center gap-1">
+                                <input type="number" id="num-width" min="0.1" max="500" step="0.1" value="20" class="w-20 bg-slate-800 border border-slate-700 rounded text-right px-2 py-0.5 font-mono text-xs text-slate-100 focus:outline-none focus:border-blue-500">
+                                <span class="unit-label text-slate-400 text-[11px]">cm</span>
+                            </div>
+                        </div>
+                        <input type="range" id="slide-width" min="0.5" max="100" step="0.5" value="20" class="w-full accent-blue-500 bg-slate-800 rounded-lg h-1.5 cursor-pointer">
+                    </div>
+
+                    <!-- Height Slider & Input -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-emerald-400 font-medium flex items-center gap-1.5">
+                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Height (Y / Green)
+                            </span>
+                            <div class="flex items-center gap-1">
+                                <input type="number" id="num-height" min="0.1" max="500" step="0.1" value="15" class="w-20 bg-slate-800 border border-slate-700 rounded text-right px-2 py-0.5 font-mono text-xs text-slate-100 focus:outline-none focus:border-emerald-500">
+                                <span class="unit-label text-slate-400 text-[11px]">cm</span>
+                            </div>
+                        </div>
+                        <input type="range" id="slide-height" min="0.5" max="100" step="0.5" value="15" class="w-full accent-emerald-500 bg-slate-800 rounded-lg h-1.5 cursor-pointer">
+                    </div>
+                </section>
+
+                <!-- 3. Visual Style & Material -->
+                <section class="space-y-3">
+                    <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Material & Appearance</label>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">Surface Style</label>
+                            <select id="material-style" class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-500">
+                                <option value="cardboard">Cardboard</option>
+                                <option value="glossy">Solid Color (Glossy)</option>
+                                <option value="glass">Translucent Glass</option>
+                                <option value="blueprint">Blueprint / Grid</option>
+                                <option value="wireframe">Wireframe Only</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-[11px] text-slate-400 block mb-1">Box Color</label>
+                            <div class="flex items-center gap-2">
+                                <input type="color" id="box-color" value="#c89d66" class="w-8 h-7 bg-transparent cursor-pointer rounded border border-slate-700 p-0">
+                                <span id="box-color-hex" class="text-xs font-mono text-slate-300">#c89d66</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2 pt-1">
+                        <label class="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
+                            <span>Show Dimension Lines & Badges</span>
+                            <input type="checkbox" id="toggle-dimensions" checked class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+                        </label>
+                        <label class="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
+                            <span>Edge Wireframe Highlights</span>
+                            <input type="checkbox" id="toggle-edges" checked class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+                        </label>
+                        <label class="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
+                            <span>Ground Grid & Shadow Plane</span>
+                            <input type="checkbox" id="toggle-grid" checked class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+                        </label>
+                        <label class="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
+                            <span>Auto-Rotate Box</span>
+                            <input type="checkbox" id="toggle-rotate" class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-0">
+                        </label>
+                    </div>
+                </section>
+
+                <!-- 4. Mathematical Calculations Card -->
+                <section class="bg-slate-950/60 rounded-xl p-3.5 border border-slate-800 space-y-2.5">
+                    <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                        <span>Geometry Specs</span>
+                        <i class="fa-solid fa-shapes text-indigo-400"></i>
+                    </h3>
+
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <div class="text-[10px] text-slate-400">Volume</div>
+                            <div id="stat-volume" class="font-mono font-semibold text-slate-100 truncate">9,000 cm³</div>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <div class="text-[10px] text-slate-400">Surface Area</div>
+                            <div id="stat-area" class="font-mono font-semibold text-slate-100 truncate">2,700 cm²</div>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <div class="text-[10px] text-slate-400">Space Diagonal</div>
+                            <div id="stat-diagonal" class="font-mono font-semibold text-indigo-300 truncate">39.05 cm</div>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                            <div class="text-[10px] text-slate-400">Total Edges Length</div>
+                            <div id="stat-edges" class="font-mono font-semibold text-slate-100 truncate">260 cm</div>
+                        </div>
+                    </div>
+
+                    <!-- Aspect Ratio Bar -->
+                    <div class="pt-1">
+                        <div class="flex justify-between text-[10px] text-slate-400 mb-1">
+                            <span>Aspect Ratio (L : W : H)</span>
+                            <span id="stat-ratio" class="font-mono text-slate-200">1.5 : 1.0 : 0.75</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Copy Specs Button -->
+                <button id="btn-copy-specs" class="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-copy"></i> Copy Specification Summary
+                </button>
+
+            </div>
+        </aside>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 bg-indigo-600 text-white px-4 py-2.5 rounded-xl shadow-2xl text-xs font-medium transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-2">
+        <i class="fa-solid fa-circle-check"></i>
+        <span id="toast-msg">Notification Message</span>
+    </div>
+
+    <!-- Main Logic Script -->
+    <script>
+        // Application State
+        const state = {
+            length: 30,  // X axis
+            width: 20,   // Z axis
+            height: 15,  // Y axis
+            unit: 'cm',
+            lockAspect: false,
+            materialStyle: 'cardboard',
+            color: '#c89d66',
+            showDimensions: true,
+            showEdges: true,
+            showGrid: true,
+            autoRotate: false
+        };
+
+        // Three.js Globals
+        let scene, camera, renderer, controls;
+        let boxMesh, edgesLine, groundGrid, shadowPlane;
+        let dimLinesGroup;
+        let cardboardTexture, gridTexture;
+
+        // Scale Factor for rendering (keeps units reasonable inside 3D viewport)
+        let worldScale = 1.0;
+
+        // Initialize App
+        window.onload = function() {
+            initThreeJS();
+            generateTextures();
+            createBoxMesh();
+            createDimensionLines();
+            setupEventListeners();
+            updateAllGeometry();
+            animate();
+        };
+
+        // Setup Three.js Scene, Camera, Lights, Renderer
+        function initThreeJS() {
+            const container = document.getElementById('canvas-holder');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x090d16); // Dark Slate Blue
+            scene.fog = new THREE.FogExp2(0x090d16, 0.008);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(45, 35, 55);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.1;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 + 0.05; // Slightly below ground level
+            controls.minDistance = 5;
+            controls.maxDistance = 300;
+
+            // Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const mainLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            mainLight.position.set(40, 60, 30);
+            mainLight.castShadow = true;
+            mainLight.shadow.mapSize.width = 2048;
+            mainLight.shadow.mapSize.height = 2048;
+            mainLight.shadow.bias = -0.0001;
+            scene.add(mainLight);
+
+            const fillLight = new THREE.DirectionalLight(0x818cf8, 0.4); // Soft indigo fill
+            fillLight.position.set(-30, 20, -30);
+            scene.add(fillLight);
+
+            // Ground Grid & Shadow Plane
+            groundGrid = new THREE.GridHelper(200, 50, 0x334155, 0x1e293b);
+            groundGrid.position.y = 0;
+            scene.add(groundGrid);
+
+            const shadowPlaneGeo = new THREE.PlaneGeometry(200, 200);
+            const shadowPlaneMat = new THREE.ShadowMaterial({ opacity: 0.35 });
+            shadowPlane = new THREE.Mesh(shadowPlaneGeo, shadowPlaneMat);
+            shadowPlane.rotation.x = -Math.PI / 2;
+            shadowPlane.position.y = -0.01;
+            shadowPlane.receiveShadow = true;
+            scene.add(shadowPlane);
+
+            // Group for dimension line helpers
+            dimLinesGroup = new THREE.Group();
+            scene.add(dimLinesGroup);
+
+            // Resize listener
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        // Generate Procedural Textures (Cardboard & Grid)
+        function generateTextures() {
+            // Cardboard
+            const canvasCB = document.createElement('canvas');
+            canvasCB.width = 512; canvasCB.height = 512;
+            const ctxCB = canvasCB.getContext('2d');
+            ctxCB.fillStyle = '#c89d66';
+            ctxCB.fillRect(0, 0, 512, 512);
+            for (let i = 0; i < 40000; i++) {
+                ctxCB.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+                ctxCB.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+            }
+            for (let y = 0; y < 512; y += 12) {
+                ctxCB.fillStyle = 'rgba(0,0,0,0.025)';
+                ctxCB.fillRect(0, y, 512, 3);
+            }
+            cardboardTexture = new THREE.CanvasTexture(canvasCB);
+            cardboardTexture.wrapS = THREE.RepeatWrapping;
+            cardboardTexture.wrapT = THREE.RepeatWrapping;
+
+            // Blueprint Grid
+            const canvasBP = document.createElement('canvas');
+            canvasBP.width = 256; canvasBP.height = 256;
+            const ctxBP = canvasBP.getContext('2d');
+            ctxBP.fillStyle = '#0f172a';
+            ctxBP.fillRect(0, 0, 256, 256);
+            ctxBP.strokeStyle = '#0284c7';
+            ctxBP.lineWidth = 2;
+            ctxBP.strokeRect(0, 0, 256, 256);
+            ctxBP.strokeStyle = '#38bdf8';
+            ctxBP.lineWidth = 0.5;
+            for(let i = 16; i < 256; i += 16) {
+                ctxBP.beginPath(); ctxBP.moveTo(i, 0); ctxBP.lineTo(i, 256); ctxBP.stroke();
+                ctxBP.beginPath(); ctxBP.moveTo(0, i); ctxBP.lineTo(256, i); ctxBP.stroke();
+            }
+            gridTexture = new THREE.CanvasTexture(canvasBP);
+            gridTexture.wrapS = THREE.RepeatWrapping;
+            gridTexture.wrapT = THREE.RepeatWrapping;
+        }
+
+        // Create main 3D Box Mesh & Edge Wireframe
+        function createBoxMesh() {
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = getMaterialByStyle(state.materialStyle, state.color);
+
+            boxMesh = new THREE.Mesh(geometry, material);
+            boxMesh.castShadow = true;
+            boxMesh.receiveShadow = true;
+            scene.add(boxMesh);
+
+            // Wireframe edges geometry
+            const edgesGeo = new THREE.EdgesGeometry(geometry);
+            const edgesMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2, opacity: 0.8, transparent: true });
+            edgesLine = new THREE.LineSegments(edgesGeo, edgesMat);
+            boxMesh.add(edgesLine);
+        }
+
+        // Get Three.js Material according to style dropdown
+        function getMaterialByStyle(style, colorHex) {
+            const color = new THREE.Color(colorHex);
+            switch (style) {
+                case 'cardboard':
+                    return new THREE.MeshStandardMaterial({
+                        map: cardboardTexture,
+                        color: color,
+                        roughness: 0.85,
+                        metalness: 0.05
+                    });
+                case 'glossy':
+                    return new THREE.MeshStandardMaterial({
+                        color: color,
+                        roughness: 0.2,
+                        metalness: 0.1
+                    });
+                case 'glass':
+                    return new THREE.MeshPhysicalMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.45,
+                        roughness: 0.1,
+                        transmission: 0.9,
+                        ior: 1.5,
+                        side: THREE.DoubleSide
+                    });
+                case 'blueprint':
+                    return new THREE.MeshStandardMaterial({
+                        map: gridTexture,
+                        color: 0x38bdf8,
+                        roughness: 0.5
+                    });
+                case 'wireframe':
+                    return new THREE.MeshBasicMaterial({
+                        color: color,
+                        wireframe: true
+                    });
+                default:
+                    return new THREE.MeshStandardMaterial({ color: color });
+            }
+        }
+
+        // Create 3D Dimension Lines (Length X, Height Y, Width Z)
+        function createDimensionLines() {
+            dimLinesGroup.clear();
+
+            const createLine = (color) => {
+                const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+                const mat = new THREE.LineDashedMaterial({
+                    color: color,
+                    dashSize: 0.5,
+                    gapSize: 0.25,
+                    linewidth: 2
+                });
+                const line = new THREE.Line(geom, mat);
+                dimLinesGroup.add(line);
+                return line;
+            };
+
+            dimLinesGroup.userData.lineL = createLine(0xef4444); // Red - Length
+            dimLinesGroup.userData.lineW = createLine(0x3b82f6); // Blue - Width
+            dimLinesGroup.userData.lineH = createLine(0x10b981); // Green - Height
+        }
+
+        // Main Update Loop when dimensions or options change
+        function updateAllGeometry() {
+            // Determine Scale Factor so large (e.g. 200cm) and small (e.g. 0.8cm) boxes both fit gracefully
+            const maxDim = Math.max(state.length, state.width, state.height);
+            worldScale = maxDim > 0 ? 25 / maxDim : 1; // Target max visual bound ~25 units
+
+            const scaledL = state.length * worldScale;
+            const scaledH = state.height * worldScale;
+            const scaledW = state.width * worldScale;
+
+            // Scale Box Mesh
+            boxMesh.scale.set(scaledL, scaledH, scaledW);
+            // Position box so its bottom face rests exactly on Y = 0 ground
+            boxMesh.position.set(0, scaledH / 2, 0);
+
+            // Update Material if color/style changed
+            boxMesh.material = getMaterialByStyle(state.materialStyle, state.color);
+            edgesLine.visible = state.showEdges;
+
+            // Update 3D Dimension Lines Position
+            updateDimensionLines(scaledL, scaledH, scaledW);
+
+            // Calculate and display specs
+            calculateMetrics();
+
+            // Auto-adjust Camera Target
+            controls.target.set(0, scaledH / 2, 0);
+            controls.update();
+        }
+
+        // Position 3D Dimension arrows outside the box
+        function updateDimensionLines(sL, sH, sW) {
+            if (!state.showDimensions) {
+                dimLinesGroup.visible = false;
+                document.getElementById('label-length').classList.add('hidden');
+                document.getElementById('label-width').classList.add('hidden');
+                document.getElementById('label-height').classList.add('hidden');
+                return;
+            }
+
+            dimLinesGroup.visible = true;
+            document.getElementById('label-length').classList.remove('hidden');
+            document.getElementById('label-width').classList.remove('hidden');
+            document.getElementById('label-height').classList.remove('hidden');
+
+            const offset = 1.5; // Offset distance from box faces
+
+            // 1. Length Line (X Axis, Front Bottom)
+            const lStart = new THREE.Vector3(-sL/2, 0.05, sW/2 + offset);
+            const lEnd   = new THREE.Vector3( sL/2, 0.05, sW/2 + offset);
+            dimLinesGroup.userData.lineL.geometry.setFromPoints([lStart, lEnd]);
+            dimLinesGroup.userData.lineL.computeLineDistances();
+
+            // 2. Width Line (Z Axis, Bottom Right)
+            const wStart = new THREE.Vector3(sL/2 + offset, 0.05, -sW/2);
+            const wEnd   = new THREE.Vector3(sL/2 + offset, 0.05,  sW/2);
+            dimLinesGroup.userData.lineW.geometry.setFromPoints([wStart, wEnd]);
+            dimLinesGroup.userData.lineW.computeLineDistances();
+
+            // 3. Height Line (Y Axis, Front Right Corner)
+            const hStart = new THREE.Vector3(sL/2 + offset, 0,  sW/2 + offset);
+            const hEnd   = new THREE.Vector3(sL/2 + offset, sH, sW/2 + offset);
+            dimLinesGroup.userData.lineH.geometry.setFromPoints([hStart, hEnd]);
+            dimLinesGroup.userData.lineH.computeLineDistances();
+
+            // Store 3D Midpoints for label projected positioning
+            dimLinesGroup.userData.midL = new THREE.Vector3(0, 0.05, sW/2 + offset);
+            dimLinesGroup.userData.midW = new THREE.Vector3(sL/2 + offset, 0.05, 0);
+            dimLinesGroup.userData.midH = new THREE.Vector3(sL/2 + offset, sH/2, sW/2 + offset);
+        }
+
+        // Project 3D World Midpoints to 2D Screen Overlay Badges
+        function updateOverlayLabels() {
+            if (!state.showDimensions || !dimLinesGroup.userData.midL) return;
+
+            const projectPoint = (vec3) => {
+                const tempVec = vec3.clone();
+                tempVec.project(camera);
+                const x = (tempVec.x * 0.5 + 0.5) * renderer.domElement.clientWidth;
+                const y = (-(tempVec.y * 0.5) + 0.5) * renderer.domElement.clientHeight;
+                return { x, y, visible: tempVec.z < 1 };
+            };
+
+            const screenL = projectPoint(dimLinesGroup.userData.midL);
+            const screenW = projectPoint(dimLinesGroup.userData.midW);
+            const screenH = projectPoint(dimLinesGroup.userData.midH);
+
+            const elemL = document.getElementById('label-length');
+            const elemW = document.getElementById('label-width');
+            const elemH = document.getElementById('label-height');
+
+            elemL.style.left = `${screenL.x}px`; elemL.style.top = `${screenL.y}px`;
+            elemW.style.left = `${screenW.x}px`; elemW.style.top = `${screenW.y}px`;
+            elemH.style.left = `${screenH.x}px`; elemH.style.top = `${screenH.y}px`;
+
+            document.getElementById('label-val-length').textContent = `${state.length} ${state.unit}`;
+            document.getElementById('label-val-width').textContent = `${state.width} ${state.unit}`;
+            document.getElementById('label-val-height').textContent = `${state.height} ${state.unit}`;
+        }
+
+        // Calculate Mathematical Specs (Volume, Area, Diagonal, Ratios)
+        function calculateMetrics() {
+            const L = state.length;
+            const W = state.width;
+            const H = state.height;
+            const u = state.unit;
+
+            const volume = L * W * H;
+            const surfaceArea = 2 * (L * W + L * H + W * H);
+            const diagonal = Math.sqrt(L*L + W*W + H*H);
+            const totalEdges = 4 * (L + W + H);
+
+            // Format Numbers
+            const fmt = (num) => new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num);
+
+            document.getElementById('stat-volume').textContent = `${fmt(volume)} ${u}³`;
+            document.getElementById('quick-volume').textContent = `${fmt(volume)} ${u}³`;
+
+            document.getElementById('stat-area').textContent = `${fmt(surfaceArea)} ${u}²`;
+            document.getElementById('quick-area').textContent = `${fmt(surfaceArea)} ${u}²`;
+
+            document.getElementById('stat-diagonal').textContent = `${fmt(diagonal)} ${u}`;
+            document.getElementById('quick-diagonal').textContent = `${fmt(diagonal)} ${u}`;
+
+            document.getElementById('stat-edges').textContent = `${fmt(totalEdges)} ${u}`;
+
+            // Aspect ratio normalized to smallest or width
+            const min = Math.min(L, W, H);
+            const rL = (L / min).toFixed(2);
+            const rW = (W / min).toFixed(2);
+            const rH = (H / min).toFixed(2);
+            document.getElementById('stat-ratio').textContent = `${rL} : ${rW} : ${rH}`;
+        }
+
+        // Bind UI Controls to State
+        function setupEventListeners() {
+            // Dimension inputs sync (Inputs <-> Sliders)
+            const syncDimension = (type, value, isFromSlider = false) => {
+                value = Math.max(0.1, parseFloat(value) || 0.1);
+
+                if (state.lockAspect) {
+                    const ratioW = state.width / state[type];
+                    const ratioH = state.height / state[type];
+                    const ratioL = state.length / state[type];
+
+                    state[type] = value;
+                    if (type !== 'length') state.length = parseFloat((value * ratioL).toFixed(2));
+                    if (type !== 'width') state.width = parseFloat((value * ratioW).toFixed(2));
+                    if (type !== 'height') state.height = parseFloat((value * ratioH).toFixed(2));
+
+                    updateInputsUI();
+                } else {
+                    state[type] = value;
+                    if (isFromSlider) {
+                        document.getElementById(`num-${type}`).value = value;
+                    } else {
+                        document.getElementById(`slide-${type}`).value = Math.min(value, 100);
+                    }
+                }
+
+                updateAllGeometry();
+            };
+
+            const updateInputsUI = () => {
+                document.getElementById('num-length').value = state.length;
+                document.getElementById('slide-length').value = Math.min(state.length, 100);
+                document.getElementById('num-width').value = state.width;
+                document.getElementById('slide-width').value = Math.min(state.width, 100);
+                document.getElementById('num-height').value = state.height;
+                document.getElementById('slide-height').value = Math.min(state.height, 100);
+            };
+
+            // Length
+            document.getElementById('slide-length').addEventListener('input', (e) => syncDimension('length', e.target.value, true));
+            document.getElementById('num-length').addEventListener('change', (e) => syncDimension('length', e.target.value));
+
+            // Width
+            document.getElementById('slide-width').addEventListener('input', (e) => syncDimension('width', e.target.value, true));
+            document.getElementById('num-width').addEventListener('change', (e) => syncDimension('width', e.target.value));
+
+            // Height
+            document.getElementById('slide-height').addEventListener('input', (e) => syncDimension('height', e.target.value, true));
+            document.getElementById('num-height').addEventListener('change', (e) => syncDimension('height', e.target.value));
+
+            // Lock Aspect Ratio
+            document.getElementById('lock-aspect').addEventListener('change', (e) => {
+                state.lockAspect = e.target.checked;
+            });
+
+            // Units
+            document.getElementById('unit-select').addEventListener('change', (e) => {
+                state.unit = e.target.value;
+                document.querySelectorAll('.unit-label').forEach(el => el.textContent = state.unit);
+                updateAllGeometry();
+            });
+
+            // Presets
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    state.length = parseFloat(btn.dataset.l);
+                    state.width = parseFloat(btn.dataset.w);
+                    state.height = parseFloat(btn.dataset.h);
+                    state.unit = btn.dataset.unit;
+
+                    document.getElementById('unit-select').value = state.unit;
+                    document.querySelectorAll('.unit-label').forEach(el => el.textContent = state.unit);
+
+                    updateInputsUI();
+                    updateAllGeometry();
+                    resetCameraView('iso');
+                    showToast(`Loaded Preset: ${btn.querySelector('.font-medium').textContent}`);
+                });
+            });
+
+            // Material Style & Color
+            document.getElementById('material-style').addEventListener('change', (e) => {
+                state.materialStyle = e.target.value;
+                updateAllGeometry();
+            });
+
+            document.getElementById('box-color').addEventListener('input', (e) => {
+                state.color = e.target.value;
+                document.getElementById('box-color-hex').textContent = e.target.value;
+                updateAllGeometry();
+            });
+
+            // Toggles
+            document.getElementById('toggle-dimensions').addEventListener('change', (e) => {
+                state.showDimensions = e.target.checked;
+                updateAllGeometry();
+            });
+            document.getElementById('toggle-edges').addEventListener('change', (e) => {
+                state.showEdges = e.target.checked;
+                updateAllGeometry();
+            });
+            document.getElementById('toggle-grid').addEventListener('change', (e) => {
+                state.showGrid = e.target.checked;
+                groundGrid.visible = e.target.checked;
+                shadowPlane.visible = e.target.checked;
+            });
+            document.getElementById('toggle-rotate').addEventListener('change', (e) => {
+                state.autoRotate = e.target.checked;
+            });
+
+            // Camera Views Buttons
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.view-btn').forEach(b => {
+                        b.classList.remove('bg-indigo-600', 'text-white');
+                        b.classList.add('text-slate-400');
+                    });
+                    btn.classList.add('bg-indigo-600', 'text-white');
+                    btn.classList.remove('text-slate-400');
+
+                    resetCameraView(btn.dataset.view);
+                });
+            });
+
+            // Reset Camera
+            document.getElementById('btn-reset-cam').addEventListener('click', () => resetCameraView('iso'));
+
+            // Mobile Sidebar Toggle
+            const sidebar = document.getElementById('sidebar');
+            document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
+                sidebar.classList.toggle('translate-x-full');
+            });
+            document.getElementById('btn-close-sidebar').addEventListener('click', () => {
+                sidebar.classList.add('translate-x-full');
+            });
+
+            // Snapshot Screenshot
+            document.getElementById('btn-snapshot').addEventListener('click', takeScreenshot);
+
+            // Copy Specs
+            document.getElementById('btn-copy-specs').addEventListener('click', copySpecsToClipboard);
+        }
+
+        // Camera preset repositioning
+        function resetCameraView(viewType) {
+            const targetY = (state.height * worldScale) / 2;
+            const dist = 60;
+
+            switch(viewType) {
+                case 'front': // Looking along Z towards -Z
+                    camera.position.set(0, targetY, dist);
+                    break;
+                case 'side': // Looking along X towards -X
+                    camera.position.set(dist, targetY, 0);
+                    break;
+                case 'top': // Looking straight down
+                    camera.position.set(0.01, dist, 0);
+                    break;
+                case 'iso': // Isometric angle
+                default:
+                    camera.position.set(45, 35, 55);
+                    break;
+            }
+            controls.target.set(0, targetY, 0);
+            controls.update();
+        }
+
+        // Take high-res screenshot
+        function takeScreenshot() {
+            renderer.render(scene, camera);
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `box-spec-${state.length}x${state.width}x${state.height}${state.unit}.png`;
+            link.href = dataURL;
+            link.click();
+            showToast('Snapshot saved as PNG image');
+        }
+
+        // Copy Specs Summary to Clipboard
+        function copySpecsToClipboard() {
+            const vol = (state.length * state.width * state.height).toLocaleString();
+            const sa = (2 * (state.length * state.width + state.length * state.height + state.width * state.height)).toLocaleString();
+            const diag = Math.sqrt(state.length**2 + state.width**2 + state.height**2).toFixed(2);
+
+            const text = `--- 3D Box Geometry Specification ---
+Length (X): ${state.length} ${state.unit}
+Width (Z):  ${state.width} ${state.unit}
+Height (Y): ${state.height} ${state.unit}
+
+Volume:       ${vol} ${state.unit}³
+Surface Area: ${sa} ${state.unit}²
+Space Diag:   ${diag} ${state.unit}`;
+
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+
+            showToast('Specification summary copied to clipboard');
+        }
+
+        // Show Toast Feedback
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').textContent = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        // Resize Canvas dynamically
+        function onWindowResize() {
+            const container = document.getElementById('canvas-holder');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // Main Animation Loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (state.autoRotate && boxMesh) {
+                boxMesh.rotation.y += 0.008;
+                dimLinesGroup.rotation.y += 0.008;
+            } else if (boxMesh) {
+                boxMesh.rotation.y = 0;
+                dimLinesGroup.rotation.y = 0;
+            }
+
+            controls.update();
+            renderer.render(scene, camera);
+            updateOverlayLabels();
+        }
+    </script>
+</body>
+</html>
